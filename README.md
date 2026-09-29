@@ -76,6 +76,14 @@ claude mcp add amocrm -e AMOCRM_DOMAIN=mycompany.amocrm.ru -e AMOCRM_TOKEN=то�
 npm test   # мок-сервер amoCRM API v4, реальный аккаунт не нужен
 ```
 
+## Нужна настройка или доработка?
+
+Подключу этот сервер под ключ: установка, настройка под ваши данные и процессы, доработка под нестандартные поля,
+ежедневные сводки. Пишите в Telegram **[@penmadebykisss](https://t.me/penmadebykisss)** или оставьте заявку на
+[penmadebykisss.github.io](https://penmadebykisss.github.io).
+
+*Need help setting this up or a custom MCP server? Telegram [@penmadebykisss](https://t.me/penmadebykisss).*
+
 ## English
 
 **amocrm-kommo-mcp** connects AI assistants to **amoCRM / Kommo** CRM: search and edit leads, create a lead with its
