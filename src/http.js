@@ -12,6 +12,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { createServer, VERSION } from './server.js';
 import { withAccount } from './api.js';
 
+// Node 18: библиотеке MCP нужен глобальный Web Crypto
+if (!globalThis.crypto) globalThis.crypto = crypto.webcrypto;
+
 const CLIENTS_FILE = process.env.CLIENTS_FILE || 'clients.json';
 const PORT = Number(process.env.MCP_HTTP_PORT || process.env.PORT || 8787);
 const MAX_PER_MIN = Number(process.env.RATE_PER_MIN || 120);

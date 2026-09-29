@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import * as amo from './api.js';
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.2.1';
 
 /** Новый экземпляр MCP-сервера со всеми инструментами. */
 export function createServer() {

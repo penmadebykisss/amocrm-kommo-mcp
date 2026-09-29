@@ -4,8 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { webcrypto } from 'node:crypto';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+
+// Node 18: библиотеке MCP нужен глобальный Web Crypto
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 // Мини-мок amoCRM: отдаёт аккаунт с именем, по которому видно, чей токен пришёл
 function mockAmo(name, token) {
