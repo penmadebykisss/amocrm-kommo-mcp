@@ -65,6 +65,12 @@ claude mcp add amocrm -e AMOCRM_DOMAIN=mycompany.amocrm.ru -e AMOCRM_TOKEN=то�
 
 Команда `npx`, аргументы `-y github:penmadebykisss/amocrm-kommo-mcp`, переменные `AMOCRM_DOMAIN` и `AMOCRM_TOKEN`.
 
+### Облачная версия — без установки
+
+Не хотите ставить Node.js и хранить токен у себя? Есть облачный доступ: вы получаете адрес и ключ
+и подключаете сервер в Claude, Cursor или ChatGPT как удалённый MCP. Подписка — пишите в
+[Telegram @penmadebykisss](https://t.me/penmadebykisss). Как развернуть такой сервер самому — [docs/cloud.md](docs/cloud.md).
+
 ## Ограничения
 
 - Лимит amoCRM — 7 запросов в секунду; сервер сам выдерживает интервал и повторяет запрос при 429.

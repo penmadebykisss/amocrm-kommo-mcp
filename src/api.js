@@ -1,24 +1,46 @@
 // Клиент amoCRM / Kommo API v4: долгосрочный токен, лимит запросов, постраничная выборка, кэш справочников.
+// Подключение берётся из контекста запроса (облачный режим, у каждого клиента своё) или из переменных окружения (локальный режим).
 
-const TOKEN = process.env.AMOCRM_TOKEN || process.env.KOMMO_TOKEN;
-const DOMAIN = (process.env.AMOCRM_DOMAIN || process.env.KOMMO_DOMAIN || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-// AMOCRM_BASE_URL — только для тестов (локальный мок-сервер)
-const BASE = process.env.AMOCRM_BASE_URL || (DOMAIN ? `https://${DOMAIN.includes('.') ? DOMAIN : DOMAIN + '.amocrm.ru'}` : '');
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const ctx = new AsyncLocalStorage();
+
+/** Выполняет fn с подключением конкретного клиента: { domain, token, baseUrl? }. */
+export const withAccount = (account, fn) => ctx.run(account, fn);
+
+function baseFrom(domain, baseUrl) {
+  if (baseUrl) return baseUrl;
+  const d = (domain || '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return d ? `https://${d.includes('.') ? d : d + '.amocrm.ru'}` : '';
+}
+
+function current() {
+  const a = ctx.getStore();
+  if (a) return { token: a.token, base: baseFrom(a.domain, a.baseUrl) };
+  // AMOCRM_BASE_URL — только для тестов (локальный мок-сервер)
+  return {
+    token: process.env.AMOCRM_TOKEN || process.env.KOMMO_TOKEN,
+    base: baseFrom(process.env.AMOCRM_DOMAIN || process.env.KOMMO_DOMAIN, process.env.AMOCRM_BASE_URL),
+  };
+}
 
 export function assertConfigured() {
-  if (!TOKEN || !BASE) {
+  const { token, base } = current();
+  if (!token || !base) {
     throw new Error('Не настроено подключение. Задайте AMOCRM_DOMAIN (например mycompany.amocrm.ru или mycompany.kommo.com) ' +
       'и AMOCRM_TOKEN (долгосрочный токен: amoCRM → amoМаркет → ⋯ → Создать интеграцию → Ключи и доступы). ' +
       'Not configured: set AMOCRM_DOMAIN and AMOCRM_TOKEN (long-lived token of a private integration).');
   }
+  return { token, base };
 }
 
 // amoCRM разрешает не больше 7 запросов в секунду — держим очередь с интервалом.
-let nextSlot = 0;
-async function throttle() {
+const slots = new Map();
+async function throttle(base) {
   const now = Date.now();
-  const wait = Math.max(0, nextSlot - now);
-  nextSlot = Math.max(now, nextSlot) + 150;
+  const next = slots.get(base) || 0;
+  const wait = Math.max(0, next - now);
+  slots.set(base, Math.max(now, next) + 150);
   if (wait) await new Promise(r => setTimeout(r, wait));
 }
 
@@ -35,10 +57,10 @@ function qs(params = {}) {
 }
 
 export async function api(path, { method = 'GET', query, body, retries = 1 } = {}) {
-  assertConfigured();
+  const { token: TOKEN, base: BASE } = assertConfigured();
   const url = BASE + '/api/v4' + path + qs(query);
   for (let attempt = 0; ; attempt++) {
-    await throttle();
+    await throttle(BASE);
     let res;
     try {
       res = await fetch(url, {
@@ -83,7 +105,8 @@ export async function list(path, embeddedKey, query = {}, max = 1000) {
 
 // Справочники меняются редко — кэшируем на 10 минут.
 const cache = new Map();
-async function cached(key, fn) {
+async function cached(name, fn) {
+  const key = current().base + '|' + name;
   const hit = cache.get(key);
   if (hit && hit.until > Date.now()) return hit.value;
   const value = await fn();
