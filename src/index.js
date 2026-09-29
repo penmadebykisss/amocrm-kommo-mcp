@@ -53,8 +53,9 @@ function contactView(c, d) {
 
 server.registerTool('crm_account', {
   title: 'Аккаунт, воронки и менеджеры',
-  description: 'Сводка аккаунта amoCRM/Kommo: название, валюта, список менеджеров (id, имя, e-mail) и все воронки с этапами (id и названия). ' +
-    'Вызывайте первым: id воронок, этапов и менеджеров нужны остальным инструментам для фильтров и создания сделок. Только чтение.',
+  description: 'Справочник аккаунта amoCRM/Kommo: account (название, поддомен, валюта), users (id, name, email, active) и pipelines со statuses (id, name, type: open/won/lost). ' +
+    'Вызывайте первым в разговоре: id воронок, этапов и менеджеров нужны фильтрам crm_search_leads, crm_tasks, crm_pipeline_report и записи в crm_create_lead / crm_update_lead. ' +
+    'Результат кэшируется на 10 минут, повторно вызывать не нужно. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: {},
   annotations: readOnly,
 }, safe(async () => {
@@ -73,8 +74,10 @@ server.registerTool('crm_account', {
 
 server.registerTool('crm_search_leads', {
   title: 'Поиск сделок',
-  description: 'Поиск сделок amoCRM/Kommo по тексту (название, телефон, e-mail контакта и т. д.) и фильтрам: воронка, этап, ответственный, ' +
-    'период создания. Возвращает название, бюджет, этап, ответственного, даты и id контактов, сначала недавно изменённые. Только чтение.',
+  description: 'Ищет сделки по тексту (название, телефон, e-mail, значения полей) и фильтрам: воронка, этап, ответственный, период создания. ' +
+    'Возвращает count, total_budget и leads (id, name, price, pipeline, status, responsible, даты, tags, contact_ids, custom_fields), свежие изменения первыми. ' +
+    'Используйте, чтобы найти сделку или список сделок; полная карточка с контактами и задачами — crm_get_lead, агрегированная аналитика — crm_pipeline_report, зависшие сделки — crm_stale_leads. ' +
+    'Этап фильтруется только вместе с pipeline_id (иначе ошибка). Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: {
     query: z.string().optional().describe('Поисковая строка'),
     pipeline_id: Id.optional().describe('ID воронки (из crm_account)'),
@@ -100,8 +103,9 @@ server.registerTool('crm_search_leads', {
 
 server.registerTool('crm_get_lead', {
   title: 'Карточка сделки',
-  description: 'Полная карточка сделки: бюджет, этап, ответственный, дополнительные поля, теги, контакты (с телефонами и e-mail), ' +
-    'компания, открытые задачи и последние примечания. Используйте, чтобы подготовиться к звонку или понять историю клиента. Только чтение.',
+  description: 'Полная карточка одной сделки по id: всё из crm_search_leads плюс contacts (телефоны, e-mail, доп. поля, is_main), company, open_tasks (со сроком и флагом overdue) и последние notes (текст, автор, дата). ' +
+    'Используйте перед звонком или письмо клиенту, чтобы понять историю; id берите из crm_search_leads или crm_find_contact. ' +
+    'Несуществующий id вернёт ошибку «не найдена». Делает 3–5 запросов к API. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: { id: Id.describe('ID сделки'), notes_limit: z.number().int().min(0).max(100).default(10) },
   annotations: readOnly,
 }, safe(async ({ id, notes_limit }) => {
@@ -126,8 +130,10 @@ server.registerTool('crm_get_lead', {
 
 server.registerTool('crm_create_lead', {
   title: 'Создать сделку с контактом',
-  description: 'Создаёт сделку одним запросом вместе с новым контактом (имя, телефон, e-mail) и компанией; можно сразу добавить примечание. ' +
-    'Без pipeline_id/status_id сделка попадёт в первый этап основной воронки.' + WRITE_NOTE,
+  description: 'Создаёт сделку одним запросом вместе с новым контактом (имя, телефон, e-mail), компанией и тегами; при note добавляет примечание. ' +
+    'Без pipeline_id/status_id сделка встаёт в первый этап основной воронки; id бери из crm_account. amoCRM может склеить контакт с существующим — тогда merged_with_existing=true. ' +
+    'Возвращает lead_id, contact_id, company_id. Чтобы изменить уже существующую сделку, используйте crm_update_lead; не создавайте дубль — сначала проверьте crm_find_contact. ' +
+    'Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически.' + WRITE_NOTE,
   inputSchema: {
     name: z.string().min(1).describe('Название сделки'),
     price: z.number().int().min(0).optional().describe('Бюджет'),
@@ -158,8 +164,10 @@ server.registerTool('crm_create_lead', {
 
 server.registerTool('crm_update_lead', {
   title: 'Изменить сделку',
-  description: 'Меняет сделку: название, бюджет, этап/воронку (перевести по воронке, закрыть как успешную — status_id 142 или проигранную — 143), ' +
-    'ответственного, теги (заменяют текущие) и дополнительные поля по id поля.' + WRITE_NOTE,
+  description: 'Частично обновляет существующую сделку: передавайте только поля, которые меняются. Перевод по воронке — status_id (+ pipeline_id при смене воронки), ' +
+    'закрыть успешно — status_id 142, проиграно — 143; tags заменяют весь набор тегов; custom_fields — [{field_id, value}]. ' +
+    'Возвращает updated и список changed. Без изменяемых полей — ошибка. Новую сделку создаёт crm_create_lead, примечание — crm_add_note. ' +
+    'Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически.' + WRITE_NOTE,
   inputSchema: {
     id: Id.describe('ID сделки'),
     name: z.string().optional().describe('Новое название'), price: z.number().int().min(0).optional().describe('Новый бюджет'),
@@ -182,8 +190,9 @@ server.registerTool('crm_update_lead', {
 
 server.registerTool('crm_find_contact', {
   title: 'Найти контакт',
-  description: 'Ищет контакты по имени, телефону или e-mail (удобно для входящего звонка или письма). Возвращает телефоны, e-mail, ' +
-    'ответственного и id связанных сделок и компаний. Только чтение.',
+  description: 'Ищет контакты по имени, телефону (в любом формате) или e-mail — например при входящем звонке или письме. ' +
+    'Возвращает contacts: id, name, phones, emails, responsible, lead_ids (связанные сделки), company_ids, custom_fields. ' +
+    'Дальше откройте сделку через crm_get_lead; искать сами сделки удобнее crm_search_leads. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: { query: z.string().min(2).describe('Имя, телефон или e-mail'), limit: z.number().int().min(1).max(100).default(10).describe('Максимум контактов') },
   annotations: readOnly,
 }, safe(async ({ query, limit }) => {
@@ -195,7 +204,9 @@ server.registerTool('crm_find_contact', {
 
 server.registerTool('crm_add_note', {
   title: 'Добавить примечание',
-  description: 'Добавляет текстовое примечание в ленту сделки, контакта или компании — например итог звонка или договорённости.' + WRITE_NOTE,
+  description: 'Добавляет обычное текстовое примечание в ленту сделки, контакта или компании: итог звонка, договорённости, комментарий. ' +
+    'Не меняет поля сущности (для этого crm_update_lead) и не ставит задач (crm_create_task). Возвращает note_id. ' +
+    'Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически.' + WRITE_NOTE,
   inputSchema: {
     entity_type: z.enum(['leads', 'contacts', 'companies']).default('leads').describe('Тип сущности: сделка, контакт или компания'),
     entity_id: Id.describe('ID сделки, контакта или компании'), text: z.string().min(1).describe('Текст примечания'),
@@ -208,8 +219,9 @@ server.registerTool('crm_add_note', {
 
 server.registerTool('crm_tasks', {
   title: 'Задачи',
-  description: 'Список незавершённых задач: все, только просроченные или на сегодня; фильтр по ответственному и по сделке. ' +
-    'Для каждой — текст, срок, ответственный, к какой сделке или контакту относится. Только чтение.',
+  description: 'Незавершённые задачи: scope=open — все, overdue — просроченные, today — со сроком до конца сегодняшнего дня; фильтры по ответственному и по сделке. ' +
+    'Возвращает count и tasks (id, text, due, overdue, responsible, entity_type, entity_id), ближайшие сроки первыми. ' +
+    'Используйте для «что просрочено у менеджера» и планирования дня; поставить задачу — crm_create_task, закрыть — crm_complete_task. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: {
     scope: z.enum(['open', 'overdue', 'today']).default('open').describe('open — все незавершённые, overdue — просроченные, today — со сроком до конца сегодняшнего дня'),
     responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
@@ -239,7 +251,10 @@ server.registerTool('crm_tasks', {
 
 server.registerTool('crm_create_task', {
   title: 'Поставить задачу',
-  description: 'Ставит задачу по сделке, контакту или компании (перезвонить, отправить КП, встреча) со сроком и ответственным.' + WRITE_NOTE,
+  description: 'Ставит задачу со сроком: звонок или встреча, привязанная к сделке, контакту или компании (или без привязки), с ответственным. ' +
+    'Дата без времени означает 18:00 по часовому поясу сервера; для точного времени передайте ISO с зоной, например 2026-10-01T11:00:00+03:00. ' +
+    'Возвращает task_id и due. Закрыть задачу — crm_complete_task, посмотреть задачи — crm_tasks. ' +
+    'Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически.' + WRITE_NOTE,
   inputSchema: {
     text: z.string().min(1).describe('Текст задачи, например «Перезвонить и обсудить КП»'),
     due: DateStr.describe('Срок: ГГГГ-ММ-ДД или дата-время ISO, например 2026-10-01T15:00:00+03:00'),
@@ -258,7 +273,9 @@ server.registerTool('crm_create_task', {
 
 server.registerTool('crm_complete_task', {
   title: 'Завершить задачу',
-  description: 'Закрывает задачу с текстом результата (например «Дозвонился, отправил КП»).' + WRITE_NOTE,
+  description: 'Закрывает задачу по id с текстом результата (например «Дозвонился, отправил КП»); результат виден в ленте сделки. ' +
+    'id берите из crm_tasks или crm_get_lead. Закрытую задачу этим инструментом не открыть. Возвращает completed. ' +
+    'Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически.' + WRITE_NOTE,
   inputSchema: { id: Id.describe('ID задачи'), result: z.string().min(1).describe('Результат выполнения') },
   annotations: write,
 }, safe(async ({ id, result }) => {
@@ -270,9 +287,10 @@ server.registerTool('crm_complete_task', {
 
 server.registerTool('crm_pipeline_report', {
   title: 'Отчёт по воронке продаж',
-  description: 'Аналитика по воронке за период создания сделок: сколько сделок и на какую сумму на каждом этапе, выиграно и проиграно ' +
-    '(количество, сумма, конверсия в успех), средний чек, средний цикл сделки в днях и разбивка по менеджерам. ' +
-    'Отвечает на вопросы «как идут продажи в этом месяце», «кто из менеджеров лучше закрывает». Только чтение.',
+  description: 'Аналитика отдела продаж по одной воронке для сделок, созданных за период (по умолчанию 30 дней): stages (сделки и бюджет по этапам), won/lost/open, ' +
+    'win_rate_pct (успешные / закрытые), avg_deal, avg_cycle_days (от создания до успеха) и managers — рейтинг менеджеров по выигранному бюджету. ' +
+    'Используйте для «как идут продажи», «кто лучше закрывает», сравнения месяцев; конкретные сделки ищите crm_search_leads, проблемные — crm_stale_leads. ' +
+    'Загружает до max_leads сделок (truncated=true, если упёрлись), на больших периодах может занять десятки секунд. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: {
     pipeline_id: Id.optional().describe('ID воронки (из crm_account)').describe('Воронка; по умолчанию основная'),
     created_from: DateStr.optional().describe('Начало периода (по умолчанию 30 дней назад)'),
@@ -318,8 +336,10 @@ server.registerTool('crm_pipeline_report', {
 
 server.registerTool('crm_stale_leads', {
   title: 'Зависшие сделки',
-  description: 'Открытые сделки, которые давно не менялись (по умолчанию 7+ дней) или у которых нет ни одной запланированной задачи — ' +
-    'то, что теряет отдел продаж. Сортировка по бюджету, с ответственным, этапом и днями без движения. Только чтение.',
+  description: 'Открытые сделки под риском: без изменений days+ дней, без запланированной задачи или с просроченной задачей. ' +
+    'Возвращает count, at_risk_budget и leads (id, name, price, stage, pipeline, responsible, idle_days, reasons), сначала самые дорогие. ' +
+    'Используйте для «что зависло», ежедневной ревизии воронки и напоминаний менеджерам; общая картина — crm_pipeline_report, задачи — crm_tasks. ' +
+    'Смотрит до 3000 открытых сделок. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: {
     days: z.number().int().min(1).max(365).default(7).describe('Сколько дней без изменений считать зависанием'),
     pipeline_id: Id.optional().describe('ID воронки (из crm_account)'),
