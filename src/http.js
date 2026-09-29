@@ -17,6 +17,8 @@ if (!globalThis.crypto) globalThis.crypto = crypto.webcrypto;
 
 const CLIENTS_FILE = process.env.CLIENTS_FILE || 'clients.json';
 const PORT = Number(process.env.MCP_HTTP_PORT || process.env.PORT || 8787);
+// По умолчанию только localhost: наружу — через HTTPS-прокси (Caddy). 0.0.0.0 — если прокси на другой машине.
+const HOST = process.env.MCP_HTTP_HOST || '127.0.0.1';
 const MAX_PER_MIN = Number(process.env.RATE_PER_MIN || 120);
 
 // Файл перечитывается при изменении — добавить клиента или продлить подписку можно без перезапуска.
@@ -92,7 +94,7 @@ export function handler() {
 
 export async function startHttp() {
   const srv = http.createServer(handler());
-  await new Promise(r => srv.listen(PORT, r));
-  console.error(`amocrm-kommo-mcp ${VERSION}: HTTP на порту ${PORT}, клиенты из ${CLIENTS_FILE} (${Object.keys(loadClients()).length})`);
+  await new Promise(r => srv.listen(PORT, HOST, r));
+  console.error(`amocrm-kommo-mcp ${VERSION}: HTTP на порту ${PORT} (${HOST}), клиенты из ${CLIENTS_FILE} (${Object.keys(loadClients()).length})`);
   return srv;
 }
