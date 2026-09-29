@@ -7,7 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import * as amo from './api.js';
 
-const server = new McpServer({ name: 'amocrm-kommo', version: '0.1.1' }, {
+const server = new McpServer({ name: 'amocrm-kommo', version: '1.0.0' }, {
   instructions: 'amoCRM / Kommo CRM. Сначала вызовите crm_account: он даёт id воронок, этапов и менеджеров для фильтров и записи. ' +
     'Вопросы руководителя («как идут продажи», «кто лучше закрывает», «что зависло») — crm_pipeline_report, crm_stale_leads, crm_tasks. ' +
     'Перед звонком клиенту — crm_find_contact и crm_get_lead. Инструменты создания и изменения пишут в живую CRM: ' +
