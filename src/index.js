@@ -104,7 +104,7 @@ server.registerTool('crm_search_leads', {
 server.registerTool('crm_get_lead', {
   title: 'Карточка сделки',
   description: 'Полная карточка одной сделки по id: всё из crm_search_leads плюс contacts (телефоны, e-mail, доп. поля, is_main), company, open_tasks (со сроком и флагом overdue) и последние notes (текст, автор, дата). ' +
-    'Используйте перед звонком или письмо клиенту, чтобы понять историю; id берите из crm_search_leads или crm_find_contact. ' +
+    'Используйте перед звонком или письмом клиенту, чтобы понять историю; id берите из crm_search_leads или crm_find_contact. ' +
     'Несуществующий id вернёт ошибку «не найдена». Делает 3–5 запросов к API. Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически. Только чтение.',
   inputSchema: { id: Id.describe('ID сделки'), notes_limit: z.number().int().min(0).max(100).default(10) },
   annotations: readOnly,
