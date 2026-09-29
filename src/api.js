@@ -34,17 +34,23 @@ function qs(params = {}) {
   return out.length ? '?' + out.join('&') : '';
 }
 
-export async function api(path, { method = 'GET', query, body, retries = 2 } = {}) {
+export async function api(path, { method = 'GET', query, body, retries = 1 } = {}) {
   assertConfigured();
   const url = BASE + '/api/v4' + path + qs(query);
   for (let attempt = 0; ; attempt++) {
     await throttle();
-    const res = await fetch(url, {
-      method,
-      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(20000),
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(12000),
+      });
+    } catch (e) {
+      throw new Error(`amoCRM ${new URL(BASE).host} не отвечает (${e.name === 'TimeoutError' ? 'таймаут 12 с' : e.cause?.code || e.message}). ` +
+        'Проверьте AMOCRM_DOMAIN: он должен совпадать с адресом аккаунта, например mycompany.amocrm.ru.');
+    }
     if (res.status === 204) return null;
     const text = await res.text();
     if (res.ok) return text ? JSON.parse(text) : null;
