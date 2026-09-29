@@ -7,7 +7,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import * as amo from './api.js';
 
-const server = new McpServer({ name: 'amocrm-kommo', version: '0.1.0' });
+const server = new McpServer({ name: 'amocrm-kommo', version: '0.1.1' }, {
+  instructions: 'amoCRM / Kommo CRM. Сначала вызовите crm_account: он даёт id воронок, этапов и менеджеров для фильтров и записи. ' +
+    'Вопросы руководителя («как идут продажи», «кто лучше закрывает», «что зависло») — crm_pipeline_report, crm_stale_leads, crm_tasks. ' +
+    'Перед звонком клиенту — crm_find_contact и crm_get_lead. Инструменты создания и изменения пишут в живую CRM: ' +
+    'покажите пользователю, что будет записано, и дождитесь согласия. ' +
+    'Start with crm_account for pipeline, stage and user ids; write tools change live CRM data and need user confirmation.',
+});
 
 const ok = data => ({ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] });
 const fail = e => ({ isError: true, content: [{ type: 'text', text: 'Ошибка: ' + (e?.message || String(e)) }] });
@@ -71,11 +77,11 @@ server.registerTool('crm_search_leads', {
     'период создания. Возвращает название, бюджет, этап, ответственного, даты и id контактов, сначала недавно изменённые. Только чтение.',
   inputSchema: {
     query: z.string().optional().describe('Поисковая строка'),
-    pipeline_id: Id.optional(),
-    status_id: Id.optional().describe('Этап (нужен вместе с pipeline_id); 142 — успешно, 143 — проиграно'),
-    responsible_user_id: Id.optional(),
-    created_from: DateStr.optional(), created_to: DateStr.optional(),
-    limit: z.number().int().min(1).max(250).default(50),
+    pipeline_id: Id.optional().describe('ID воронки (из crm_account)'),
+    status_id: Id.optional().describe('ID этапа воронки (из crm_account); 142 — успешно, 143 — проиграно').describe('Этап (нужен вместе с pipeline_id); 142 — успешно, 143 — проиграно'),
+    responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
+    created_from: DateStr.optional().describe('Созданы не раньше этой даты'), created_to: DateStr.optional().describe('Созданы не позже этой даты'),
+    limit: z.number().int().min(1).max(250).default(50).describe('Максимум сделок в ответе'),
   },
   annotations: readOnly,
 }, safe(async ({ query, pipeline_id, status_id, responsible_user_id, created_from, created_to, limit }) => {
@@ -125,10 +131,10 @@ server.registerTool('crm_create_lead', {
   inputSchema: {
     name: z.string().min(1).describe('Название сделки'),
     price: z.number().int().min(0).optional().describe('Бюджет'),
-    pipeline_id: Id.optional(), status_id: Id.optional(), responsible_user_id: Id.optional(),
-    contact_name: z.string().optional(), phone: z.string().optional(), email: z.string().optional(),
-    company_name: z.string().optional(),
-    tags: z.array(z.string()).optional(),
+    pipeline_id: Id.optional().describe('ID воронки (из crm_account)'), status_id: Id.optional().describe('ID этапа воронки (из crm_account); 142 — успешно, 143 — проиграно'), responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
+    contact_name: z.string().optional().describe('Имя контакта'), phone: z.string().optional().describe('Телефон контакта, например +79001234567'), email: z.string().optional().describe('E-mail контакта'),
+    company_name: z.string().optional().describe('Название компании клиента'),
+    tags: z.array(z.string()).optional().describe('Теги сделки'),
     note: z.string().optional().describe('Текст примечания к сделке'),
   },
   annotations: write,
@@ -155,11 +161,11 @@ server.registerTool('crm_update_lead', {
   description: 'Меняет сделку: название, бюджет, этап/воронку (перевести по воронке, закрыть как успешную — status_id 142 или проигранную — 143), ' +
     'ответственного, теги (заменяют текущие) и дополнительные поля по id поля.' + WRITE_NOTE,
   inputSchema: {
-    id: Id,
-    name: z.string().optional(), price: z.number().int().min(0).optional(),
-    pipeline_id: Id.optional(), status_id: Id.optional(), responsible_user_id: Id.optional(),
-    tags: z.array(z.string()).optional(),
-    custom_fields: z.array(z.object({ field_id: Id, value: z.union([z.string(), z.number(), z.boolean()]) })).optional()
+    id: Id.describe('ID сделки'),
+    name: z.string().optional().describe('Новое название'), price: z.number().int().min(0).optional().describe('Новый бюджет'),
+    pipeline_id: Id.optional().describe('ID воронки (из crm_account)'), status_id: Id.optional().describe('ID этапа воронки (из crm_account); 142 — успешно, 143 — проиграно'), responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
+    tags: z.array(z.string()).optional().describe('Теги (заменяют текущие)'),
+    custom_fields: z.array(z.object({ field_id: Id.describe('ID доп. поля'), value: z.union([z.string(), z.number(), z.boolean()]).describe('Значение') })).optional()
       .describe('Доп. поля: [{field_id, value}]; id полей — в карточке сделки или настройках amoCRM'),
   },
   annotations: write,
@@ -178,7 +184,7 @@ server.registerTool('crm_find_contact', {
   title: 'Найти контакт',
   description: 'Ищет контакты по имени, телефону или e-mail (удобно для входящего звонка или письма). Возвращает телефоны, e-mail, ' +
     'ответственного и id связанных сделок и компаний. Только чтение.',
-  inputSchema: { query: z.string().min(2), limit: z.number().int().min(1).max(100).default(10) },
+  inputSchema: { query: z.string().min(2).describe('Имя, телефон или e-mail'), limit: z.number().int().min(1).max(100).default(10).describe('Максимум контактов') },
   annotations: readOnly,
 }, safe(async ({ query, limit }) => {
   const [contacts, d] = await Promise.all([amo.list('/contacts', 'contacts', { query, with: 'leads' }, limit), amo.dictionaries()]);
@@ -191,8 +197,8 @@ server.registerTool('crm_add_note', {
   title: 'Добавить примечание',
   description: 'Добавляет текстовое примечание в ленту сделки, контакта или компании — например итог звонка или договорённости.' + WRITE_NOTE,
   inputSchema: {
-    entity_type: z.enum(['leads', 'contacts', 'companies']).default('leads'),
-    entity_id: Id, text: z.string().min(1),
+    entity_type: z.enum(['leads', 'contacts', 'companies']).default('leads').describe('Тип сущности: сделка, контакт или компания'),
+    entity_id: Id.describe('ID сделки, контакта или компании'), text: z.string().min(1).describe('Текст примечания'),
   },
   annotations: write,
 }, safe(async ({ entity_type, entity_id, text }) => {
@@ -205,10 +211,10 @@ server.registerTool('crm_tasks', {
   description: 'Список незавершённых задач: все, только просроченные или на сегодня; фильтр по ответственному и по сделке. ' +
     'Для каждой — текст, срок, ответственный, к какой сделке или контакту относится. Только чтение.',
   inputSchema: {
-    scope: z.enum(['open', 'overdue', 'today']).default('open'),
-    responsible_user_id: Id.optional(),
-    lead_id: Id.optional(),
-    limit: z.number().int().min(1).max(500).default(100),
+    scope: z.enum(['open', 'overdue', 'today']).default('open').describe('open — все незавершённые, overdue — просроченные, today — со сроком до конца сегодняшнего дня'),
+    responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
+    lead_id: Id.optional().describe('Только задачи этой сделки'),
+    limit: z.number().int().min(1).max(500).default(100).describe('Максимум задач в ответе'),
   },
   annotations: readOnly,
 }, safe(async ({ scope, responsible_user_id, lead_id, limit }) => {
@@ -235,11 +241,11 @@ server.registerTool('crm_create_task', {
   title: 'Поставить задачу',
   description: 'Ставит задачу по сделке, контакту или компании (перезвонить, отправить КП, встреча) со сроком и ответственным.' + WRITE_NOTE,
   inputSchema: {
-    text: z.string().min(1),
+    text: z.string().min(1).describe('Текст задачи, например «Перезвонить и обсудить КП»'),
     due: DateStr.describe('Срок: ГГГГ-ММ-ДД или дата-время ISO, например 2026-10-01T15:00:00+03:00'),
-    entity_type: z.enum(['leads', 'contacts', 'companies']).default('leads'),
-    entity_id: Id.optional(),
-    responsible_user_id: Id.optional(),
+    entity_type: z.enum(['leads', 'contacts', 'companies']).default('leads').describe('Тип сущности: сделка, контакт или компания'),
+    entity_id: Id.optional().describe('ID сделки, контакта или компании; без него задача не привязана'),
+    responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
     task_type: z.enum(['call', 'meeting']).optional().describe('Тип: звонок или встреча; по умолчанию звонок'),
   },
   annotations: write,
@@ -253,7 +259,7 @@ server.registerTool('crm_create_task', {
 server.registerTool('crm_complete_task', {
   title: 'Завершить задачу',
   description: 'Закрывает задачу с текстом результата (например «Дозвонился, отправил КП»).' + WRITE_NOTE,
-  inputSchema: { id: Id, result: z.string().min(1).describe('Результат выполнения') },
+  inputSchema: { id: Id.describe('ID задачи'), result: z.string().min(1).describe('Результат выполнения') },
   annotations: write,
 }, safe(async ({ id, result }) => {
   await amo.api(`/tasks/${id}`, { method: 'PATCH', body: { is_completed: true, result: { text: result } } });
@@ -268,10 +274,10 @@ server.registerTool('crm_pipeline_report', {
     '(количество, сумма, конверсия в успех), средний чек, средний цикл сделки в днях и разбивка по менеджерам. ' +
     'Отвечает на вопросы «как идут продажи в этом месяце», «кто из менеджеров лучше закрывает». Только чтение.',
   inputSchema: {
-    pipeline_id: Id.optional().describe('Воронка; по умолчанию основная'),
+    pipeline_id: Id.optional().describe('ID воронки (из crm_account)').describe('Воронка; по умолчанию основная'),
     created_from: DateStr.optional().describe('Начало периода (по умолчанию 30 дней назад)'),
-    created_to: DateStr.optional(),
-    max_leads: z.number().int().min(50).max(10000).default(3000),
+    created_to: DateStr.optional().describe('Конец периода (по умолчанию сейчас)'),
+    max_leads: z.number().int().min(50).max(10000).default(3000).describe('Сколько сделок максимум загрузить для расчёта'),
   },
   annotations: readOnly,
 }, safe(async ({ pipeline_id, created_from, created_to, max_leads }) => {
@@ -316,10 +322,10 @@ server.registerTool('crm_stale_leads', {
     'то, что теряет отдел продаж. Сортировка по бюджету, с ответственным, этапом и днями без движения. Только чтение.',
   inputSchema: {
     days: z.number().int().min(1).max(365).default(7).describe('Сколько дней без изменений считать зависанием'),
-    pipeline_id: Id.optional(),
-    responsible_user_id: Id.optional(),
+    pipeline_id: Id.optional().describe('ID воронки (из crm_account)'),
+    responsible_user_id: Id.optional().describe('ID ответственного менеджера (из crm_account)'),
     include_no_task: z.boolean().default(true).describe('Добавить свежие сделки без запланированной задачи'),
-    limit: z.number().int().min(1).max(500).default(50),
+    limit: z.number().int().min(1).max(500).default(50).describe('Максимум сделок в ответе'),
   },
   annotations: readOnly,
 }, safe(async ({ days, pipeline_id, responsible_user_id, include_no_task, limit }) => {
