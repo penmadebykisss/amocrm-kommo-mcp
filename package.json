@@ -1,0 +1,40 @@
+{
+  "name": "amocrm-kommo-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for amoCRM and Kommo CRM: leads, contacts, tasks and notes plus sales analytics — pipeline report, stale deals, overdue tasks by manager",
+  "type": "module",
+  "bin": {
+    "amocrm-kommo-mcp": "src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/smoke.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "amocrm",
+    "kommo",
+    "crm",
+    "sales",
+    "pipeline",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/penmadebykisss/amocrm-kommo-mcp.git"
+  },
+  "homepage": "https://github.com/penmadebykisss/amocrm-kommo-mcp#readme",
+  "bugs": "https://github.com/penmadebykisss/amocrm-kommo-mcp/issues",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "zod": "^4.6.5"
+  }
+}
