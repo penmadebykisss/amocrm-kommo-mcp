@@ -1,6 +1,6 @@
 {
   "name": "amocrm-kommo-mcp",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "MCP server for amoCRM and Kommo CRM: leads, contacts, tasks and notes plus sales analytics — pipeline report, stale deals, overdue tasks by manager",
   "type": "module",
   "bin": {

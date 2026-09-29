@@ -7,7 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import * as amo from './api.js';
 
-const server = new McpServer({ name: 'amocrm-kommo', version: '1.1.0' }, {
+const server = new McpServer({ name: 'amocrm-kommo', version: '1.1.1' }, {
   instructions: 'amoCRM / Kommo CRM. Сначала вызовите crm_account: он даёт id воронок, этапов и менеджеров для фильтров и записи. ' +
     'Вопросы руководителя («как идут продажи», «кто лучше закрывает», «что зависло») — crm_pipeline_report, crm_stale_leads, crm_tasks. ' +
     'Перед звонком клиенту — crm_find_contact и crm_get_lead. Инструменты создания и изменения пишут в живую CRM: ' +
@@ -21,8 +21,10 @@ const safe = fn => async args => { try { return ok(await fn(args)); } catch (e) 
 
 const Id = z.number().int().positive();
 const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}/).describe('Дата ГГГГ-ММ-ДД или дата-время ISO');
-const readOnly = { readOnlyHint: true, openWorldHint: true };
-const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
+const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
+const write = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+// Повторный вызов с теми же аргументами даёт тот же результат
+const writeIdempotent = { ...write, idempotentHint: true };
 const WRITE_NOTE = ' Изменяет данные в CRM: покажите пользователю, что будет записано, и получите согласие.';
 
 function leadView(l, d) {
@@ -176,7 +178,7 @@ server.registerTool('crm_update_lead', {
     custom_fields: z.array(z.object({ field_id: Id.describe('ID доп. поля'), value: z.union([z.string(), z.number(), z.boolean()]).describe('Значение') })).optional()
       .describe('Доп. поля: [{field_id, value}]; id полей — в карточке сделки или настройках amoCRM'),
   },
-  annotations: write,
+  annotations: writeIdempotent,
 }, safe(async ({ id, tags, custom_fields, ...rest }) => {
   const body = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined));
   if (tags) body._embedded = { tags: tags.map(name => ({ name })) };
@@ -277,7 +279,7 @@ server.registerTool('crm_complete_task', {
     'id берите из crm_tasks или crm_get_lead. Закрытую задачу этим инструментом не открыть. Возвращает completed. ' +
     'Требует AMOCRM_DOMAIN и AMOCRM_TOKEN; лимит amoCRM 7 запросов/с соблюдается автоматически.' + WRITE_NOTE,
   inputSchema: { id: Id.describe('ID задачи'), result: z.string().min(1).describe('Результат выполнения') },
-  annotations: write,
+  annotations: writeIdempotent,
 }, safe(async ({ id, result }) => {
   await amo.api(`/tasks/${id}`, { method: 'PATCH', body: { is_completed: true, result: { text: result } } });
   return { completed: true, id };
