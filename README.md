@@ -102,6 +102,8 @@ of a private integration).
 npx -y github:penmadebykisss/amocrm-kommo-mcp
 ```
 
+**Ready-made agent skill:** [Kommo / amoCRM Sales Assistant](https://www.agensi.io/skills/kommo-amocrm-sales-assistant) on Agensi — free SKILL.md with usage rules and configs for Claude Code, Claude Desktop, Cursor, VS Code, Windsurf and Codex.
+
 ## Смотрите также
 
 - [ru-business-mcp](https://github.com/penmadebykisss/ru-business-mcp) — проверка контрагентов, курсы ЦБ, пени, производственный календарь
